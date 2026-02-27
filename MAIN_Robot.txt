@@ -1,0 +1,106 @@
+Function main
+
+'zmienne w programie
+String odebranyTekst$
+String kawalki$(10)
+Integer iloscKawalkow
+Integer koszIndex
+Integer pudelkoIndex
+    
+Boolean xON, xStart, xStop, xSHL, xConveyor_Sensor_End, xPudelko_full, xKosz_full 'zmienne otrzymywane od PLC
+ 
+Pallet 0, P2, P3, P4, P5, 2, 2 'pudelko
+Pallet 1, P6, P7, P8, P9, 3, 3 'kosz
+
+Print "Czekam na polaczenie z CODESYS"
+koszIndex = 1
+pudelkoIndex = 1
+
+'deklaracja komunikacji
+OpenNet #202 As Server
+WaitNet #202
+Print "Polaczono z PLC"
+
+
+
+Do
+
+    Line Input #202, odebranyTekst$
+    Print "Odebrano surowy tekst: ", odebranyTekst$	'wyswietlanie odebranego komunikatu
+    
+    
+
+    If odebranyTekst$ <> "" Then
+        
+    iloscKawalkow = ParseStr(odebranyTekst$, kawalki$(), ",")
+            
+        If iloscKawalkow = 7 Then
+				
+				'przetwarzanie tekstuna wartosci
+                xON = (Val(kawalki$(0)) = 1)
+                xStart = (Val(kawalki$(1)) = 1)
+                xStop = (Val(kawalki$(2)) = 1)
+                xSHL = (Val(kawalki$(3)) = 1)
+                xConveyor_Sensor_End = (Val(kawalki$(4)) = 1)
+                xKosz_full = (Val(kawalki$(5)) = 1)
+                xPudelko_full = (Val(kawalki$(6)) = 1)
+            
+                Print "xON:", xON, " | xStart:", xStart, " | xStop:", xStop, " | xSHL:", xSHL, " | Sensor:", xConveyor_Sensor_End, " | xKosz_full:", xKosz_full, " | xPudelko_full:", xPudelko_full 'wyswietlanie wartosci zmiennych
+        
+            If xON = On And xStart = On And xStop = Off Then
+            
+				'zalaczenie zasilania robota
+                Motor On
+                Power High
+                Speed 50
+                Accel 50, 50
+				
+				'opróznianie kosza
+                If xKosz_full = On Then
+                    koszIndex = 1
+                EndIf
+				
+				'opróznianie pudelka
+                If xPudelko_full = On Then
+                    pudelkoIndex = 1
+                EndIf
+				
+				
+				
+                If xSHL = On And xConveyor_Sensor_End = On Then 'wykonywanie ruchu dla elementu metalowego
+                
+                    If pudelkoIndex <= 4 Then
+                        Go P1
+                        Jump Pallet(0, pudelkoIndex)
+                        Wait 1
+                        Jump P0
+                        Print #202, "MOVE_DONE"
+                        pudelkoIndex = pudelkoIndex + 1
+                    Else
+                        Print "Pudelko jest pelne!"
+                        Go P0
+                    EndIf
+            
+                ElseIf xSHL = Off And xConveyor_Sensor_End = On Then 'wykonywanie ruchu dla elementu niemetalowego
+                    If koszIndex <= 9 Then
+                        Go P1
+                        Jump Pallet(1, koszIndex)
+                        Wait 1
+                        Jump P0
+                        Print #202, "MOVE_DONE"
+                        koszIndex = koszIndex + 1
+                    Else
+                        Print "Kosz jest pelny!"
+                        Jump P0
+                    EndIf
+                EndIf
+
+				'wysylanie komunikatu do PLC o zakonczeniu wykonywanego ruchu
+                Print #202, "ECHO: ", odebranyTekst$, " - MOVE_DONE"
+                Print "Wyslano potwierdzenie do PLC!"
+                
+            EndIf
+        EndIf
+    EndIf
+Loop
+Fend

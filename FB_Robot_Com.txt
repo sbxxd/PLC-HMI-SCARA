@@ -1,0 +1,88 @@
+FUNCTION_BLOCK Robot_Com
+VAR_INPUT
+	xConnect:  BOOL;
+	Command_number: INT;
+	xSend: BOOL;
+END_VAR
+VAR_OUTPUT
+	xConnected : BOOL;       //Status połączenia
+    xTrwaWysylanie : BOOL;   
+    xRobotZakonczyl : BOOL;  //Odpowiedz od robota
+END_VAR
+VAR
+	KlientTCP : NBS.TCP_Client;
+    AdresIP : NBS.IP_ADDR := (sAddr := '127.0.0.1'); //localhost
+    WysylanieTCP : NBS.TCP_Write;
+    OdbieranieTCP : NBS.TCP_Read;
+    
+    
+    ZboczeWyslij : R_TRIG;
+    sWiadomoscDoWyslania : STRING(255);
+    sOdebranyTekst : STRING(255);
+    WskaznikKonca : POINTER TO BYTE;
+END_VAR
+
+KlientTCP(xEnable := xConnect, ipAddr := AdresIP, uiPort := 2000);
+xConnected := KlientTCP.xActive;
+ZboczeWyslij(CLK := xSend);
+
+IF ZboczeWyslij.Q AND NOT xTrwaWysylanie THEN
+    xTrwaWysylanie := TRUE;
+    xRobotZakonczyl := FALSE; 
+    
+  
+    CASE Command_number OF
+        
+		0://  POWER ON  PRZEJAZD DO POZYCJI HOME 	xON=1 | xStart=1 | xStop=0 | xSHL=0 | xConveyor_Sensor_End=0
+		sWiadomoscDoWyslania := '1,1,0,0,0,1,1$R$N';
+		
+		1:// PRZENOSZENIE ELEMENTU DO PUDELKA  		xON=1 | xStart=1 | xStop=0 | xSHL=1 | xConveyor_Sensor_End=1
+		sWiadomoscDoWyslania := '1,1,0,1,1,0,0$R$N';
+		
+        2:// PRZENOSZENIE ELEMENTU DO KOSZA 		xON=1 | xStart=1 | xStop=0 | xSHL=0 | xConveyor_Sensor_End=1
+		sWiadomoscDoWyslania := '1,1,0,0,1,0,0$R$N';
+		
+        3:// STOP 									xON=1 | xStart=1 | xStop=1 | xSHL=0 | xConveyor_Sensor_End=0
+		sWiadomoscDoWyslania := '1,1,1,0,0,0,0$R$N';
+		
+		4://KOSZ ZOSTAŁ OPRÓŻNIONY 					iElem_Kosz=0
+		sWiadomoscDoWyslania := '1,1,0,0,0,1,0$R$N';
+		
+		5://PUDELKO ZOSTAŁO OPRÓŻNIONE 				iElem_Pudelko=0
+		sWiadomoscDoWyslania := '1,1,0,0,0,0,1$R$N';
+    ELSE
+        sWiadomoscDoWyslania := 'PING$R$N'; 
+    END_CASE
+END_IF
+
+WysylanieTCP(
+    xExecute := xTrwaWysylanie AND KlientTCP.xActive, 
+    hConnection := KlientTCP.hConnection, 
+    szSize := INT_TO_UDINT(LEN(sWiadomoscDoWyslania)), 
+    pData := ADR(sWiadomoscDoWyslania)
+);
+
+IF WysylanieTCP.xDone OR WysylanieTCP.xError THEN
+    xTrwaWysylanie := FALSE;
+END_IF
+
+OdbieranieTCP(
+    xEnable := KlientTCP.xActive,
+    hConnection := KlientTCP.hConnection,
+    szSize := 255,
+    pData := ADR(sOdebranyTekst)
+);
+
+IF OdbieranieTCP.xReady AND OdbieranieTCP.szCount > 0 THEN
+
+    WskaznikKonca := ADR(sOdebranyTekst) + OdbieranieTCP.szCount;
+    WskaznikKonca^ := 0; 
+    
+	
+	//Robot skończył pracę
+    IF FIND(sOdebranyTekst, 'MOVE_DONE') > 0 THEN
+        xRobotZakonczyl := TRUE;
+        sOdebranyTekst := ''; 
+    END_IF
+	
+END_IF

@@ -1,0 +1,246 @@
+PROGRAM MAIN
+VAR
+	//zmienne wejściowye PLC
+	DI_xActuator_Sensor_Home, DI_xActuator_Sensor_End :BOOL; //czujniki na siłowniku 1A1
+	DI_xConveyor_Sensor_Part_Start: BOOL;//czujnik B2
+	DI_xConveyor_Sensor_Part_End : BOOL;//czujnik B3
+	DI_xConveyor_Sensor_Metal : BOOL; //czujnik B1
+	DI_xStart, DI_xStop: BOOL; //przyciski operatorskie
+	DI_xON : BOOL; //załączenie zasilania układu
+	
+	//zmienne HMI
+	HMI_Nowe_Pudelko, HMI_Nowy_Kosz: BOOL; //opróżnianie pudełka/kosza
+	HMI_Pudelko_full,HMI_Kosz_full: BOOL; //lampki sygnalizujące zapełnienie pudełka/kosza
+	
+	//zmienne wyjściowe PLC
+	DQ_vY1, DQ_vY2: BOOL; //cewki elektrozaworu 1V1
+	DQ_H1, DQ_H2: BOOL; //Lampki sygnalizujące pracę maszyny
+	
+	//zmienne do komunikacji z robotem
+	Communication: Ramka_Com;
+	To_Rob: STRING(255); //wiadomość wysyłana do robota
+	From_Rob: BOOL; //wiadomość otrzymana od robota
+	iCommand: INT:=0; //numer komendy wysyłanej do robota
+	xSend: BOOL; //zatwierdzenie wybranej komendy i wysłanie jej do robota
+	xConnected: BOOL; //status połączenia
+	xSending: BOOL;
+	
+	//zmienne wewnętrzne
+	reset: BOOL; //zmienna resetująca symulację
+	M0: BOOL; //marker pomocniczy
+		//maszyna stanów
+		iStep : INT :=0;
+		//ilość elementów w pudelku lub koszu
+		iElem_Pudelko,iElem_Kosz: INT :=0;
+		//SHL
+		Elem_location: BYTE := 0;
+		posTrig: R_TRIG;		
+		
+	//deklaracja FB	
+	A1: symulacja_1A1; //silownik pneumatyczny 1A1
+	Robot_Com: Robot_Com; //komunikacja z robotem scara
+	
+	//deklaracja Timerów
+	T1, T2: TON;
+END_VAR
+
+
+//symulowanie pracy silownika
+A1(
+	Y1:= DQ_vY1, 
+	Y2:= DQ_vY2, 
+	RESET:= reset , 
+	START:= DI_xON, 
+	B1=> DI_xActuator_Sensor_Home, 
+	B2=> DI_xActuator_Sensor_End);
+	
+//komunikacja z robotem	
+Robot_Com(
+	xConnect:= DI_xON , 
+	Command_number:=iCommand , 
+	xSend:= xSend , 
+	xConnected=> xConnected , 
+	xTrwaWysylanie=> xSending , 
+	xRobotZakonczyl=>From_Rob );
+
+T1(IN:=DI_xActuator_Sensor_End , PT:=T#1S , Q=> , ET=> ); //poczekaj na wysunięciu
+T2(IN:=DI_xActuator_Sensor_Home , PT:=T#1S , Q=> , ET=> );//poczekaj na wsunięciu
+Communication(Command_number:=iCommand , Message=>To_Rob);
+
+posTrig(CLK := DI_xActuator_Sensor_End AND DI_xConveyor_Sensor_Part_Start);//zbocze narastajace -> przesuniecie o jeden bit
+
+
+IF xSending OR from_rob THEN
+    xSend := FALSE;
+END_IF
+
+//resetowanie symulacji
+IF reset THEN
+
+	DQ_vY1:=FALSE;
+	DQ_vY2:=FALSE;
+ 	DQ_H1:=FALSE;
+	DQ_H2:=FALSE;
+	M0:=FALSE;
+	From_Rob:=FALSE;
+	DI_xActuator_Sensor_Home:=FALSE;
+	DI_xActuator_Sensor_End:=FALSE;
+	iElem_Pudelko:=0;
+	iElem_Kosz:=0;
+	iStep:=0;
+	Elem_location:=0;
+	HMI_Kosz_full:=FALSE;
+	HMI_Pudelko_full:=FALSE;
+END_IF
+
+//Opróżnianie pudełka
+IF HMI_Nowe_Pudelko THEN
+	iElem_Pudelko:=0;
+	iCommand:=5;
+	xSend:=TRUE;
+	HMI_Pudelko_full:=FALSE;
+
+END_IF
+
+//Opróżnianie kosza
+IF HMI_Nowy_Kosz THEN
+	iElem_Kosz:=0;
+	iCommand:=4;
+	xSend:=TRUE;
+	HMI_Kosz_full:=FALSE;
+	
+END_IF
+
+//Pudełko jest pełne
+IF iELEM_Pudelko=4 THEN
+	HMI_Pudelko_full:=TRUE;
+END_IF
+
+//Kosz jest pełny
+IF iElem_Kosz=9 THEN
+	HMI_Kosz_full:=TRUE;
+END_IF
+
+IF DI_xStop THEN
+	iStep:=0;
+END_IF
+
+CASE iStep OF
+	0: //power off
+	DQ_vY1:=FALSE;
+	DQ_vY2:=FALSE;
+	DQ_H1:=FALSE;
+	DQ_H2:=FALSE;
+	
+	IF DI_xON THEN
+		iStep:=10;
+	END_IF
+		
+	10://power on
+	iCommand:=0;
+	DQ_H2:=TRUE;
+	
+	IF Di_xON AND DI_xStart AND NOT DI_xStop AND iElem_Pudelko<4 AND iElem_Kosz <9 THEN
+		iStep:=20;
+	ELSIF DI_xStop THEN
+		iStep:=0;
+	END_IF
+
+	20://PRACA
+	DQ_H2:=FALSE;
+	DQ_H1:=TRUE;
+
+	// Warunek stopu
+	IF DI_xStop THEN
+		iStep:=0;
+	END_IF
+
+	// Rejestr przesuwny i lokalizacja elementów
+	IF posTrig.Q THEN
+		
+		Elem_location := SHL(Elem_location, 1);
+			
+		IF DI_xConveyor_Sensor_Part_Start THEN
+			Elem_location.0 := DI_xConveyor_Sensor_Metal;
+		END_IF
+		
+	END_IF
+
+		// Logika siłownika pneumatycznego z BLOKADĄ PEŁNEGO KOSZA/PUDEŁKA
+	IF NOT DI_xConveyor_Sensor_Part_End THEN 
+		
+		IF di_xstart THEN
+			M0:=TRUE;
+		ELSIF di_xstop THEN
+			M0:=FALSE;
+		END_IF
+			
+			// Siłownik pracuje tylko gdy jest miejsce w koszu i pudełku
+		IF DI_xActuator_Sensor_Home AND M0 AND iElem_Pudelko < 4 AND iElem_Kosz < 9 THEN
+			DQ_vY1:=TRUE;
+			DQ_vY2:=FALSE;
+		ELSIF DI_xActuator_Sensor_End AND M0 THEN
+			DQ_vY1:=FALSE;
+			DQ_vY2:=TRUE;
+		END_IF
+		
+	END_IF
+
+		// Sekcja decyzyjna - Priorytety i przejścia
+	IF iElem_Pudelko >= 4 THEN 
+		iCommand := 5;
+		xSend := TRUE;
+		iStep := 50; 
+	ELSIF iElem_Kosz >= 9 THEN 
+		iCommand := 4;
+		xSend := TRUE;
+		iStep := 60; 
+	ELSIF DI_xConveyor_Sensor_Part_End THEN
+		xSend := TRUE;
+		IF Elem_location.7 THEN // element metalowy
+			iCommand := 1;
+			iStep := 30;
+		ELSE // element niemetalowy
+			iCommand := 2;
+			iStep := 40;
+		END_IF
+	END_IF
+
+	30: //pudelko
+	IF from_rob THEN
+		iElem_Pudelko := iElem_Pudelko + 1;
+		Elem_location.7 := FALSE;
+		iStep := 20;
+	END_IF
+		
+	IF DI_xStop THEN
+		iStep := 0;
+	END_IF
+		
+	40: //kosz
+	IF from_rob THEN
+		iElem_Kosz := iElem_Kosz + 1;
+		iStep := 20;
+	END_IF
+		
+	IF DI_xStop THEN
+		iStep := 0;
+	END_IF
+
+	50: // Czekaj na reset pudełka z HMI
+	DQ_vY1 := FALSE;
+	DQ_vY2 := TRUE; // Wsuń siłownik dla bezpieczeństwa
+	
+	IF iElem_Pudelko < 4 THEN
+		iStep := 20;
+	END_IF
+
+	60: // Czekaj na reset kosza z HMI
+	DQ_vY1 := FALSE;
+	DQ_vY2 := TRUE;
+	
+	IF iElem_Kosz < 9 THEN
+		iStep := 20;
+	END_IF
+
+END_CASE
