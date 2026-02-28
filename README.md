@@ -15,9 +15,9 @@ Głównym celem układu jest transport detali z podajnika, identyfikacja materia
 ![EPSON RC+](https://img.shields.io/badge/EPSON_RC+-v8.0-blue?style=for-the-badge)
 ![Autodesk Inventor](https://img.shields.io/badge/Autodesk_Inventor-CAD-orange?style=for-the-badge)
 
-* **CODESYS v3.5 SP21** – Opracowanie logiki sterowania dla PLC, konfiguracja **SoftPLC**, stworzenie wizualizacji **HMI** oraz implementacja **klienta TCP/IP** do komunikacji z robotem.
-* **EPSON RC+ 8.0** – Programowanie robota przemysłowego w języku **SPEL+** oraz symulacja cyklu pracy i trajektorii ruchu.
-* **Autodesk Inventor** – Projektowanie mechaniczne, **modelowanie 3D** stanowiska oraz rozmieszczenie czujników i elementów wykonawczych.
+* **🔴 CODESYS v3.5 SP21** – Opracowanie logiki sterowania dla PLC, konfiguracja **SoftPLC**, stworzenie wizualizacji **HMI** oraz implementacja **klienta TCP/IP** do komunikacji z robotem.
+* **🔵 EPSON RC+ 8.0** – Programowanie robota przemysłowego w języku **SPEL+** oraz symulacja cyklu pracy i trajektorii ruchu.
+* **🟠 Autodesk Inventor** – Projektowanie mechaniczne, **modelowanie 3D** stanowiska oraz rozmieszczenie czujników i elementów wykonawczych.
 
 ## 🛠️ Budowa stanowiska
 ### Elementy wykonawcze
